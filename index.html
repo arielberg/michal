@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="רישום לידות 2026 - ניהול רשומות לידות">
+    <meta name="theme-color" content="#6366f1">
+    <title>רישום לידות 2026</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/png" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👶</text></svg>">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>רישום לידות 2026</h1>
+            <button id="addBtn" class="btn btn-primary">
+                <span>➕</span> הוסף רשומה חדשה
+            </button>
+        </header>
+
+        <div class="filter-section">
+            <select id="monthFilter" class="filter-select">
+                <option value="">כל החודשים</option>
+                <option value="ינואר">ינואר</option>
+                <option value="פברואר">פברואר</option>
+                <option value="מרץ">מרץ</option>
+                <option value="אפריל">אפריל</option>
+                <option value="מאי">מאי</option>
+                <option value="יוני">יוני</option>
+                <option value="יולי">יולי</option>
+                <option value="אוגוסט">אוגוסט</option>
+                <option value="ספטמבר">ספטמבר</option>
+                <option value="אוקטובר">אוקטובר</option>
+                <option value="נובמבר">נובמבר</option>
+                <option value="דצמבר">דצמבר</option>
+            </select>
+            <input type="text" id="searchInput" class="search-input" placeholder="חיפוש לפי שם...">
+        </div>
+
+        <div id="entriesList" class="entries-list"></div>
+
+        <div id="emptyState" class="empty-state">
+            <div class="empty-icon">📋</div>
+            <h2>אין רשומות עדיין</h2>
+            <p>לחץ על "הוסף רשומה חדשה" כדי להתחיל</p>
+        </div>
+    </div>
+
+    <!-- Modal for Add/Edit Entry -->
+    <div id="entryModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">הוסף רשומה חדשה</h2>
+                <button class="close-btn" id="closeModal">&times;</button>
+            </div>
+            <form id="entryForm">
+                <div class="form-group">
+                    <label for="month">חודש *</label>
+                    <select id="month" required>
+                        <option value="">בחר חודש</option>
+                        <option value="ינואר">ינואר</option>
+                        <option value="פברואר">פברואר</option>
+                        <option value="מרץ">מרץ</option>
+                        <option value="אפריל">אפריל</option>
+                        <option value="מאי">מאי</option>
+                        <option value="יוני">יוני</option>
+                        <option value="יולי">יולי</option>
+                        <option value="אוגוסט">אוגוסט</option>
+                        <option value="ספטמבר">ספטמבר</option>
+                        <option value="אוקטובר">אוקטובר</option>
+                        <option value="נובמבר">נובמבר</option>
+                        <option value="דצמבר">דצמבר</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="estimatedDate">תאריך משוער *</label>
+                    <input type="date" id="estimatedDate" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="names">שמות *</label>
+                    <input type="text" id="names" placeholder="שם הלקוח/ה" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="birthNumber">מספר לידה *</label>
+                    <input type="number" id="birthNumber" min="1" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="agreedAmount">סכום שסוכם *</label>
+                    <input type="number" id="agreedAmount" min="0" step="100" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="includes">מה כולל</label>
+                    <textarea id="includes" rows="2" placeholder="תיאור מה כלול בחבילה (מפגשים, טיפולים וכו')"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="actualAmount">כמה שולם בפועל</label>
+                    <input type="number" id="actualAmount" min="0" step="100">
+                </div>
+
+                <div class="form-group">
+                    <label for="notes">הערות</label>
+                    <textarea id="notes" rows="3" placeholder="הערות נוספות"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="birthDate">תאריך הלידה</label>
+                    <input type="date" id="birthDate">
+                </div>
+
+                <div class="form-group">
+                    <label for="babyGender">מין היילוד</label>
+                    <select id="babyGender">
+                        <option value="">בחר</option>
+                        <option value="בן">בן</option>
+                        <option value="בת">בת</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="birthPlace">מקום לידה</label>
+                    <input type="text" id="birthPlace" placeholder="עין כרם, בית חולים וכו'">
+                </div>
+
+                <div class="form-group">
+                    <label for="referralSource">הגיעה דרך</label>
+                    <input type="text" id="referralSource" placeholder="שם הממליץ/ה">
+                </div>
+
+                <input type="hidden" id="entryId">
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="cancelBtn">ביטול</button>
+                    <button type="submit" class="btn btn-primary">שמור</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
