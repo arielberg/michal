@@ -1,11 +1,13 @@
 // Application State
 let entries = [];
 let editingId = null;
+let deferredPrompt = null;
 
 // DOM Elements
 const entriesList = document.getElementById('entriesList');
 const emptyState = document.getElementById('emptyState');
 const addBtn = document.getElementById('addBtn');
+const installBtn = document.getElementById('installBtn');
 const entryModal = document.getElementById('entryModal');
 const entryForm = document.getElementById('entryForm');
 const closeModal = document.getElementById('closeModal');
@@ -19,11 +21,13 @@ document.addEventListener('DOMContentLoaded', () => {
     renderEntries();
     setupEventListeners();
     registerServiceWorker();
+    setupInstallPrompt();
 });
 
 // Event Listeners
 function setupEventListeners() {
     addBtn.addEventListener('click', () => openModal());
+    installBtn.addEventListener('click', handleInstallClick);
     closeModal.addEventListener('click', () => closeModalHandler());
     cancelBtn.addEventListener('click', () => closeModalHandler());
     entryModal.addEventListener('click', (e) => {
@@ -313,10 +317,59 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// Setup Install Prompt
+function setupInstallPrompt() {
+    // Check if already installed
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+        installBtn.style.display = 'none';
+        return;
+    }
+
+    // Listen for beforeinstallprompt event
+    window.addEventListener('beforeinstallprompt', (e) => {
+        // Prevent Chrome 67 and earlier from automatically showing the prompt
+        e.preventDefault();
+        // Stash the event so it can be triggered later
+        deferredPrompt = e;
+        // Show install button
+        installBtn.style.display = 'inline-flex';
+    });
+
+    // Listen for app installed event
+    window.addEventListener('appinstalled', () => {
+        console.log('PWA was installed');
+        installBtn.style.display = 'none';
+        deferredPrompt = null;
+    });
+}
+
+// Handle Install Button Click
+async function handleInstallClick() {
+    if (!deferredPrompt) {
+        // Show manual installation instructions
+        alert('להורדת האפליקציה:\n\nChrome/Edge: לחץ על התפריט (⋮) > "הוסף למסך הבית" או "התקן אפליקציה"\n\nFirefox: לחץ על התפריט (☰) > "התקן" או "Add to Home Screen"\n\nSafari (iOS): לחץ על Share > "הוסף למסך הבית"');
+        return;
+    }
+
+    // Show the install prompt
+    deferredPrompt.prompt();
+    
+    // Wait for the user to respond to the prompt
+    const { outcome } = await deferredPrompt.userChoice;
+    
+    console.log(`User response to install prompt: ${outcome}`);
+    
+    // Clear the deferredPrompt
+    deferredPrompt = null;
+    
+    // Hide the install button
+    installBtn.style.display = 'none';
+}
+
 // Register Service Worker for PWA
 function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./sw.js')
+        navigator.serviceWorker.register('./sw.js', { scope: './' })
             .then(registration => {
                 console.log('Service Worker registered:', registration);
             })
