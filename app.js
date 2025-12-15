@@ -1,6 +1,8 @@
 // Application State
 let entries = [];
 let editingId = null;
+let viewingId = null;
+let deletingId = null;
 let deferredPrompt = null;
 
 // DOM Elements
@@ -9,9 +11,20 @@ const emptyState = document.getElementById('emptyState');
 const addBtn = document.getElementById('addBtn');
 const installBtn = document.getElementById('installBtn');
 const entryModal = document.getElementById('entryModal');
+const viewModal = document.getElementById('viewModal');
+const deleteModal = document.getElementById('deleteModal');
 const entryForm = document.getElementById('entryForm');
 const closeModal = document.getElementById('closeModal');
+const closeViewModal = document.getElementById('closeViewModal');
+const closeDeleteModal = document.getElementById('closeDeleteModal');
 const cancelBtn = document.getElementById('cancelBtn');
+const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
+const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+const deleteConfirmInput = document.getElementById('deleteConfirmInput');
+const deleteError = document.getElementById('deleteError');
+const editFromViewBtn = document.getElementById('editFromViewBtn');
+const closeViewBtn = document.getElementById('closeViewBtn');
+const viewContent = document.getElementById('viewContent');
 const monthFilter = document.getElementById('monthFilter');
 const searchInput = document.getElementById('searchInput');
 
@@ -29,18 +42,62 @@ function setupEventListeners() {
     addBtn.addEventListener('click', () => openModal());
     installBtn.addEventListener('click', handleInstallClick);
     closeModal.addEventListener('click', () => closeModalHandler());
+    closeViewModal.addEventListener('click', () => closeViewModalHandler());
+    closeDeleteModal.addEventListener('click', () => closeDeleteModalHandler());
     cancelBtn.addEventListener('click', () => closeModalHandler());
+    cancelDeleteBtn.addEventListener('click', () => closeDeleteModalHandler());
+    closeViewBtn.addEventListener('click', () => closeViewModalHandler());
+    editFromViewBtn.addEventListener('click', () => {
+        closeViewModalHandler();
+        if (viewingId) {
+            openModal(viewingId);
+        }
+    });
     entryModal.addEventListener('click', (e) => {
         if (e.target === entryModal) closeModalHandler();
+    });
+    viewModal.addEventListener('click', (e) => {
+        if (e.target === viewModal) closeViewModalHandler();
+    });
+    deleteModal.addEventListener('click', (e) => {
+        if (e.target === deleteModal) closeDeleteModalHandler();
     });
     entryForm.addEventListener('submit', handleSubmit);
     monthFilter.addEventListener('change', renderEntries);
     searchInput.addEventListener('input', renderEntries);
+    
+    // Delete confirmation input handler
+    deleteConfirmInput.addEventListener('input', (e) => {
+        const inputValue = e.target.value.trim();
+        if (inputValue === 'מחק') {
+            confirmDeleteBtn.disabled = false;
+            deleteError.style.display = 'none';
+        } else {
+            confirmDeleteBtn.disabled = true;
+            if (inputValue.length > 0) {
+                deleteError.style.display = 'block';
+            } else {
+                deleteError.style.display = 'none';
+            }
+        }
+    });
+    
+    confirmDeleteBtn.addEventListener('click', () => {
+        if (deleteConfirmInput.value.trim() === 'מחק' && deletingId) {
+            performDelete(deletingId);
+        }
+    });
 
     // Close modal on Escape key
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && entryModal.classList.contains('active')) {
-            closeModalHandler();
+        if (e.key === 'Escape') {
+            if (entryModal.classList.contains('active')) {
+                closeModalHandler();
+            } else if (viewModal.classList.contains('active')) {
+                closeViewModalHandler();
+            } else if (deleteModal.classList.contains('active')) {
+                closeDeleteModalHandler();
+            }
         }
     });
 }
@@ -148,18 +205,168 @@ function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
 
-// Delete entry
+// Delete entry - show confirmation modal
 function deleteEntry(id) {
-    if (confirm('האם אתה בטוח שברצונך למחוק רשומה זו?')) {
-        entries = entries.filter(e => e.id !== id);
-        saveEntries();
-        renderEntries();
-    }
+    deletingId = id;
+    deleteConfirmInput.value = '';
+    deleteError.style.display = 'none';
+    confirmDeleteBtn.disabled = true;
+    deleteModal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    deleteConfirmInput.focus();
+}
+
+// Perform actual deletion
+function performDelete(id) {
+    entries = entries.filter(e => e.id !== id);
+    saveEntries();
+    renderEntries();
+    closeDeleteModalHandler();
+}
+
+// Close delete modal
+function closeDeleteModalHandler() {
+    deleteModal.classList.remove('active');
+    document.body.style.overflow = '';
+    deleteConfirmInput.value = '';
+    deleteError.style.display = 'none';
+    confirmDeleteBtn.disabled = true;
+    deletingId = null;
 }
 
 // Edit entry
 function editEntry(id) {
     openModal(id);
+}
+
+// View entry
+function viewEntry(id) {
+    viewingId = id;
+    const entry = entries.find(e => e.id === id);
+    if (entry) {
+        renderViewContent(entry);
+        viewModal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+}
+
+// Close view modal
+function closeViewModalHandler() {
+    viewModal.classList.remove('active');
+    document.body.style.overflow = '';
+    viewingId = null;
+}
+
+// Render view content
+function renderViewContent(entry) {
+    const formatDate = (dateStr) => {
+        if (!dateStr) return 'לא צוין';
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('he-IL', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    };
+
+    const formatCurrency = (amount) => {
+        if (!amount && amount !== 0) return 'לא צוין';
+        return new Intl.NumberFormat('he-IL', {
+            style: 'currency',
+            currency: 'ILS'
+        }).format(amount);
+    };
+
+    viewContent.innerHTML = `
+        <div class="view-details">
+            <div class="view-section">
+                <h3>פרטי לקוח</h3>
+                <div class="view-row">
+                    <span class="view-label">שמות:</span>
+                    <span class="view-value">${escapeHtml(entry.names)}</span>
+                </div>
+                <div class="view-row">
+                    <span class="view-label">חודש:</span>
+                    <span class="view-value">${entry.month || 'לא צוין'}</span>
+                </div>
+                <div class="view-row">
+                    <span class="view-label">תאריך משוער:</span>
+                    <span class="view-value">${formatDate(entry.estimatedDate)}</span>
+                </div>
+                <div class="view-row">
+                    <span class="view-label">מספר לידה:</span>
+                    <span class="view-value">${entry.birthNumber || 'לא צוין'}</span>
+                </div>
+            </div>
+
+            <div class="view-section">
+                <h3>פרטי תשלום</h3>
+                <div class="view-row">
+                    <span class="view-label">סכום שסוכם:</span>
+                    <span class="view-value">${formatCurrency(entry.agreedAmount)}</span>
+                </div>
+                <div class="view-row">
+                    <span class="view-label">שולם בפועל:</span>
+                    <span class="view-value">${formatCurrency(entry.actualAmount)}</span>
+                </div>
+                ${entry.includes ? `
+                    <div class="view-row full-width">
+                        <span class="view-label">מה כולל:</span>
+                        <span class="view-value">${escapeHtml(entry.includes)}</span>
+                    </div>
+                ` : ''}
+            </div>
+
+            <div class="view-section">
+                <h3>פרטי לידה</h3>
+                <div class="view-row">
+                    <span class="view-label">תאריך הלידה:</span>
+                    <span class="view-value">${formatDate(entry.birthDate)}</span>
+                </div>
+                <div class="view-row">
+                    <span class="view-label">מין היילוד:</span>
+                    <span class="view-value">${entry.babyGender || 'לא צוין'}</span>
+                </div>
+                <div class="view-row">
+                    <span class="view-label">מקום לידה:</span>
+                    <span class="view-value">${escapeHtml(entry.birthPlace) || 'לא צוין'}</span>
+                </div>
+            </div>
+
+            ${entry.referralSource ? `
+                <div class="view-section">
+                    <h3>הפנייה</h3>
+                    <div class="view-row">
+                        <span class="view-label">הגיעה דרך:</span>
+                        <span class="view-value">${escapeHtml(entry.referralSource)}</span>
+                    </div>
+                </div>
+            ` : ''}
+
+            ${entry.notes ? `
+                <div class="view-section">
+                    <h3>הערות</h3>
+                    <div class="view-row full-width">
+                        <span class="view-value notes-text">${escapeHtml(entry.notes)}</span>
+                    </div>
+                </div>
+            ` : ''}
+
+            <div class="view-section">
+                <h3>מידע טכני</h3>
+                <div class="view-row">
+                    <span class="view-label">נוצר ב:</span>
+                    <span class="view-value">${formatDate(entry.createdAt)}</span>
+                </div>
+                ${entry.updatedAt !== entry.createdAt ? `
+                    <div class="view-row">
+                        <span class="view-label">עודכן לאחרונה:</span>
+                        <span class="view-value">${formatDate(entry.updatedAt)}</span>
+                    </div>
+                ` : ''}
+            </div>
+        </div>
+    `;
 }
 
 // Render entries
@@ -198,11 +405,11 @@ function renderEntries() {
         entriesList.innerHTML = filteredEntries.map(entry => createEntryCard(entry)).join('');
     }
 
-    // Attach event listeners to delete buttons
-    document.querySelectorAll('.btn-delete').forEach(btn => {
+    // Attach event listeners to view buttons
+    document.querySelectorAll('.btn-view').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const id = e.target.closest('.entry-card').dataset.id;
-            deleteEntry(id);
+            viewEntry(id);
         });
     });
 
@@ -211,6 +418,14 @@ function renderEntries() {
         btn.addEventListener('click', (e) => {
             const id = e.target.closest('.entry-card').dataset.id;
             editEntry(id);
+        });
+    });
+
+    // Attach event listeners to delete buttons
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const id = e.target.closest('.entry-card').dataset.id;
+            deleteEntry(id);
         });
     });
 }
@@ -239,8 +454,9 @@ function createEntryCard(entry) {
                     ${entry.month ? `<span class="badge badge-month">${entry.month}</span>` : ''}
                 </div>
                 <div class="entry-actions">
-                    <button class="btn btn-edit">ערוך</button>
-                    <button class="btn btn-delete">מחק</button>
+                    <button class="btn btn-view">👁️ צפה</button>
+                    <button class="btn btn-edit">✏️ ערוך</button>
+                    <button class="btn btn-delete">🗑️ מחק</button>
                 </div>
             </div>
             <div class="entry-details">

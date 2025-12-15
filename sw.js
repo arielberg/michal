@@ -1,9 +1,13 @@
 const CACHE_NAME = 'birth-registry-2026-v1';
 const urlsToCache = [
+    './',
     './index.html',
     './styles.css',
     './app.js',
-    './manifest.json'
+    './manifest.json',
+    './icon.svg',
+    './icon-192.png',
+    './icon-512.png'
 ];
 
 // Install Service Worker

@@ -115,6 +115,17 @@ header h1 {
     background: #d97706;
 }
 
+.btn-view {
+    background: var(--primary-color);
+    color: white;
+    padding: 6px 12px;
+    font-size: 14px;
+}
+
+.btn-view:hover {
+    background: var(--primary-dark);
+}
+
 .btn-delete {
     background: var(--danger-color);
     color: white;
@@ -443,6 +454,117 @@ header h1 {
     .modal-content {
         margin: 20px auto;
     }
+}
+
+/* View Modal Styles */
+.view-content {
+    padding: 24px;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+.view-details {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.view-section {
+    background: var(--bg-color);
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.view-section h3 {
+    margin: 0 0 16px 0;
+    font-size: 18px;
+    color: var(--primary-color);
+    border-bottom: 2px solid var(--primary-color);
+    padding-bottom: 8px;
+}
+
+.view-row {
+    display: grid;
+    grid-template-columns: 150px 1fr;
+    gap: 12px;
+    padding: 8px 0;
+    align-items: start;
+}
+
+.view-row.full-width {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+}
+
+.view-label {
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.view-value {
+    color: var(--text-primary);
+    font-size: 16px;
+}
+
+.view-value.notes-text {
+    white-space: pre-wrap;
+    line-height: 1.6;
+}
+
+/* Delete Modal Styles */
+.delete-modal-content {
+    max-width: 500px;
+}
+
+.delete-warning {
+    padding: 24px;
+    text-align: center;
+}
+
+.warning-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+}
+
+.delete-warning p {
+    margin: 12px 0;
+    color: var(--text-primary);
+}
+
+.delete-instruction {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-top: 20px;
+}
+
+.delete-confirm-input {
+    width: 100%;
+    padding: 12px;
+    margin: 16px 0;
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 16px;
+    text-align: center;
+    direction: rtl;
+}
+
+.delete-confirm-input:focus {
+    outline: none;
+    border-color: var(--danger-color);
+}
+
+.delete-error {
+    color: var(--danger-color);
+    font-size: 14px;
+    margin-top: 8px;
+    font-weight: 600;
+}
+
+#confirmDeleteBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 /* Print Styles */

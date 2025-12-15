@@ -5,8 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="רישום לידות 2026 - ניהול רשומות לידות">
     <meta name="theme-color" content="#6366f1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="לידות 2026">
     <title>רישום לידות 2026</title>
     <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" sizes="192x192" href="icon-192.png">
+    <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+    <link rel="shortcut icon" href="icon-192.png">
     <link rel="stylesheet" href="styles.css">
     <link rel="icon" type="image/png" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👶</text></svg>">
 </head>
@@ -49,6 +57,42 @@
             <div class="empty-icon">📋</div>
             <h2>אין רשומות עדיין</h2>
             <p>לחץ על "הוסף רשומה חדשה" כדי להתחיל</p>
+        </div>
+    </div>
+
+    <!-- Modal for View Entry -->
+    <div id="viewModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>צפייה ברשומה</h2>
+                <button class="close-btn" id="closeViewModal">&times;</button>
+            </div>
+            <div id="viewContent" class="view-content"></div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" id="closeViewBtn">סגור</button>
+                <button type="button" class="btn btn-primary" id="editFromViewBtn">ערוך</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Delete Confirmation -->
+    <div id="deleteModal" class="modal">
+        <div class="modal-content delete-modal-content">
+            <div class="modal-header">
+                <h2>אישור מחיקה</h2>
+                <button class="close-btn" id="closeDeleteModal">&times;</button>
+            </div>
+            <div class="delete-warning">
+                <div class="warning-icon">⚠️</div>
+                <p><strong>האם אתה בטוח שברצונך למחוק רשומה זו?</strong></p>
+                <p class="delete-instruction">לצורך אישור, אנא הקלד <strong>"מחק"</strong> בתיבה למטה:</p>
+                <input type="text" id="deleteConfirmInput" class="delete-confirm-input" placeholder="הקלד 'מחק' לאישור">
+                <p id="deleteError" class="delete-error" style="display: none;">הטקסט שהזנת שגוי. אנא הקלד "מחק" בדיוק.</p>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" id="cancelDeleteBtn">ביטול</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn" disabled>מחק לצמיתות</button>
+            </div>
         </div>
     </div>
 
