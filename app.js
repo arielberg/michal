@@ -64,7 +64,12 @@ function setupEventListeners() {
     });
     entryForm.addEventListener('submit', handleSubmit);
     monthFilter.addEventListener('change', renderEntries);
-    searchInput.addEventListener('input', renderEntries);
+    searchInput.addEventListener('input', () => {
+        renderEntries();
+    });
+    searchInput.addEventListener('keyup', () => {
+        renderEntries();
+    });
     
     // Delete confirmation input handler
     deleteConfirmInput.addEventListener('input', (e) => {
@@ -149,7 +154,9 @@ function fillForm(entry) {
     document.getElementById('entryId').value = entry.id;
     document.getElementById('month').value = entry.month || '';
     document.getElementById('estimatedDate').value = entry.estimatedDate || '';
-    document.getElementById('names').value = entry.names || '';
+    document.getElementById('motherName').value = entry.motherName || '';
+    document.getElementById('fatherName').value = entry.fatherName || '';
+    document.getElementById('familyName').value = entry.familyName || '';
     document.getElementById('birthNumber').value = entry.birthNumber || '';
     document.getElementById('agreedAmount').value = entry.agreedAmount || '';
     document.getElementById('includes').value = entry.includes || '';
@@ -159,6 +166,20 @@ function fillForm(entry) {
     document.getElementById('babyGender').value = entry.babyGender || '';
     document.getElementById('birthPlace').value = entry.birthPlace || '';
     document.getElementById('referralSource').value = entry.referralSource || '';
+    
+    // Backward compatibility: if old 'names' field exists, try to parse it
+    if (entry.names && !entry.motherName && !entry.familyName) {
+        const nameParts = entry.names.split(' ');
+        if (nameParts.length >= 1) {
+            document.getElementById('familyName').value = nameParts[nameParts.length - 1];
+            if (nameParts.length >= 2) {
+                document.getElementById('motherName').value = nameParts[0];
+                if (nameParts.length >= 3) {
+                    document.getElementById('fatherName').value = nameParts.slice(1, -1).join(' ');
+                }
+            }
+        }
+    }
 }
 
 // Handle form submission
@@ -169,7 +190,17 @@ function handleSubmit(e) {
         id: document.getElementById('entryId').value || generateId(),
         month: document.getElementById('month').value,
         estimatedDate: document.getElementById('estimatedDate').value,
-        names: document.getElementById('names').value,
+        motherName: document.getElementById('motherName').value.trim(),
+        fatherName: document.getElementById('fatherName').value.trim(),
+        familyName: document.getElementById('familyName').value.trim(),
+        // Create full name for backward compatibility and display
+        names: (() => {
+            const mother = document.getElementById('motherName').value.trim();
+            const father = document.getElementById('fatherName').value.trim();
+            const family = document.getElementById('familyName').value.trim();
+            const parts = [mother, father, family].filter(p => p);
+            return parts.join(' ');
+        })(),
         birthNumber: parseInt(document.getElementById('birthNumber').value),
         agreedAmount: parseInt(document.getElementById('agreedAmount').value),
         includes: document.getElementById('includes').value,
@@ -277,14 +308,38 @@ function renderViewContent(entry) {
         }).format(amount);
     };
 
+    const fullName = [
+        entry.motherName,
+        entry.fatherName,
+        entry.familyName
+    ].filter(n => n).join(' ') || entry.names || 'לא צוין';
+
     viewContent.innerHTML = `
         <div class="view-details">
             <div class="view-section">
                 <h3>פרטי לקוח</h3>
                 <div class="view-row">
-                    <span class="view-label">שמות:</span>
-                    <span class="view-value">${escapeHtml(entry.names)}</span>
+                    <span class="view-label">שם מלא:</span>
+                    <span class="view-value">${escapeHtml(fullName)}</span>
                 </div>
+                ${entry.motherName ? `
+                    <div class="view-row">
+                        <span class="view-label">שם האם:</span>
+                        <span class="view-value">${escapeHtml(entry.motherName)}</span>
+                    </div>
+                ` : ''}
+                ${entry.fatherName ? `
+                    <div class="view-row">
+                        <span class="view-label">שם האב:</span>
+                        <span class="view-value">${escapeHtml(entry.fatherName)}</span>
+                    </div>
+                ` : ''}
+                ${entry.familyName ? `
+                    <div class="view-row">
+                        <span class="view-label">שם משפחה:</span>
+                        <span class="view-value">${escapeHtml(entry.familyName)}</span>
+                    </div>
+                ` : ''}
                 <div class="view-row">
                     <span class="view-label">חודש:</span>
                     <span class="view-value">${entry.month || 'לא צוין'}</span>
@@ -380,14 +435,20 @@ function renderEntries() {
     }
 
     // Filter by search
-    const searchTerm = searchInput.value.toLowerCase();
+    const searchTerm = searchInput.value.trim().toLowerCase();
     if (searchTerm) {
-        filteredEntries = filteredEntries.filter(e => 
-            e.names?.toLowerCase().includes(searchTerm) ||
-            e.notes?.toLowerCase().includes(searchTerm) ||
-            e.birthPlace?.toLowerCase().includes(searchTerm) ||
-            e.referralSource?.toLowerCase().includes(searchTerm)
-        );
+        filteredEntries = filteredEntries.filter(e => {
+            const searchableText = [
+                e.names,
+                e.motherName,
+                e.fatherName,
+                e.familyName,
+                e.notes,
+                e.birthPlace,
+                e.referralSource
+            ].filter(t => t).join(' ').toLowerCase();
+            return searchableText.includes(searchTerm);
+        });
     }
 
     // Sort by estimated date (newest first)
@@ -405,27 +466,45 @@ function renderEntries() {
         entriesList.innerHTML = filteredEntries.map(entry => createEntryCard(entry)).join('');
     }
 
-    // Attach event listeners to view buttons
+    // Attach event listeners to view buttons (use event delegation for better reliability)
     document.querySelectorAll('.btn-view').forEach(btn => {
         btn.addEventListener('click', (e) => {
-            const id = e.target.closest('.entry-card').dataset.id;
-            viewEntry(id);
+            e.stopPropagation();
+            const card = e.currentTarget.closest('.entry-card');
+            if (card) {
+                const id = card.dataset.id;
+                if (id) {
+                    viewEntry(id);
+                }
+            }
         });
     });
 
     // Attach event listeners to edit buttons
     document.querySelectorAll('.btn-edit').forEach(btn => {
         btn.addEventListener('click', (e) => {
-            const id = e.target.closest('.entry-card').dataset.id;
-            editEntry(id);
+            e.stopPropagation();
+            const card = e.currentTarget.closest('.entry-card');
+            if (card) {
+                const id = card.dataset.id;
+                if (id) {
+                    editEntry(id);
+                }
+            }
         });
     });
 
     // Attach event listeners to delete buttons
     document.querySelectorAll('.btn-delete').forEach(btn => {
         btn.addEventListener('click', (e) => {
-            const id = e.target.closest('.entry-card').dataset.id;
-            deleteEntry(id);
+            e.stopPropagation();
+            const card = e.currentTarget.closest('.entry-card');
+            if (card) {
+                const id = card.dataset.id;
+                if (id) {
+                    deleteEntry(id);
+                }
+            }
         });
     });
 }
@@ -446,11 +525,17 @@ function createEntryCard(entry) {
         }).format(amount);
     };
 
+    const fullName = [
+        entry.motherName,
+        entry.fatherName,
+        entry.familyName
+    ].filter(n => n).join(' ') || entry.names || 'ללא שם';
+
     return `
         <div class="entry-card" data-id="${entry.id}">
             <div class="entry-header">
                 <div>
-                    <h3 class="entry-title">${escapeHtml(entry.names)}</h3>
+                    <h3 class="entry-title">${escapeHtml(fullName)}</h3>
                     ${entry.month ? `<span class="badge badge-month">${entry.month}</span>` : ''}
                 </div>
                 <div class="entry-actions">
