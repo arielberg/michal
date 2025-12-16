@@ -10,7 +10,7 @@ const GOOGLE_CONFIG = {
     CALENDAR_ID: 'primary',
     
     // API Key (optional, for server-side use)
-    API_KEY: 'YOUR_API_KEY',
+    API_KEY: 'AIzaSyDoDS2oqX8XcFXt4t-NRA0F8-VYy_Wwp90',
     
     // Scopes required
     SCOPES: 'https://www.googleapis.com/auth/calendar',

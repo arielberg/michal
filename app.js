@@ -746,6 +746,457 @@ async function handleInstallClick() {
     installBtn.style.display = 'none';
 }
 
+// ==================== Google Calendar API Integration ====================
+
+// Initialize Google APIs
+async function initializeGoogleAPIs() {
+    console.log('Initializing Google APIs...');
+    
+    try {
+        // Wait for gapi to be loaded
+        await new Promise((resolve) => {
+            if (typeof gapi !== 'undefined' && gapi.load) {
+                console.log('gapi found, loading client...');
+                gapi.load('client', async () => {
+                    try {
+                        console.log('Initializing gapi client...');
+                        await gapi.client.init({
+                            apiKey: GOOGLE_CONFIG.API_KEY || '',
+                            discoveryDocs: GOOGLE_CONFIG.DISCOVERY_DOCS
+                        });
+                        gapiLoaded = true;
+                        console.log('gapi client initialized');
+                        resolve();
+                    } catch (error) {
+                        console.error('Error initializing gapi client:', error);
+                        // Still resolve to allow the app to continue
+                        resolve();
+                    }
+                });
+            } else {
+                console.log('Waiting for gapi to load...');
+                // Wait for gapi to load
+                const checkGapi = setInterval(() => {
+                    if (typeof gapi !== 'undefined' && gapi.load) {
+                        clearInterval(checkGapi);
+                        console.log('gapi found, loading client...');
+                        gapi.load('client', async () => {
+                            try {
+                                console.log('Initializing gapi client...');
+                                await gapi.client.init({
+                                    apiKey: GOOGLE_CONFIG.API_KEY || '',
+                                    discoveryDocs: GOOGLE_CONFIG.DISCOVERY_DOCS
+                                });
+                                gapiLoaded = true;
+                                console.log('gapi client initialized');
+                                resolve();
+                            } catch (error) {
+                                console.error('Error initializing gapi client:', error);
+                                resolve();
+                            }
+                        });
+                    }
+                }, 100);
+                
+                // Timeout after 10 seconds
+                setTimeout(() => {
+                    clearInterval(checkGapi);
+                    console.error('GAPI loading timeout - continuing anyway');
+                    resolve();
+                }, 10000);
+            }
+        });
+        
+        // Wait for Google Identity Services
+        await new Promise((resolve) => {
+            if (typeof google !== 'undefined' && google.accounts) {
+                console.log('Google Identity Services found');
+                gisLoaded = true;
+                resolve();
+            } else {
+                console.log('Waiting for Google Identity Services...');
+                const checkGoogle = setInterval(() => {
+                    if (typeof google !== 'undefined' && google.accounts) {
+                        clearInterval(checkGoogle);
+                        console.log('Google Identity Services found');
+                        gisLoaded = true;
+                        resolve();
+                    }
+                }, 100);
+                
+                setTimeout(() => {
+                    clearInterval(checkGoogle);
+                    console.error('Google Identity Services loading timeout - continuing anyway');
+                    resolve();
+                }, 10000);
+            }
+        });
+        
+        console.log('Google APIs initialization complete. gapiLoaded:', gapiLoaded, 'gisLoaded:', gisLoaded);
+        updateAuthUI();
+        
+        // Try to sign in automatically
+        await checkAuthStatus();
+    } catch (error) {
+        console.error('Error initializing Google APIs:', error);
+        showAuthRequired();
+    }
+}
+
+// Check authentication status
+async function checkAuthStatus() {
+    if (!gapiLoaded || !gapi.client || !gisLoaded) {
+        showAuthRequired();
+        return;
+    }
+    
+    try {
+        // Check if already authenticated (from previous session)
+        const token = gapi.client.getToken();
+        if (token && token.access_token) {
+            handleAuthSuccess();
+        } else {
+            showAuthRequired();
+        }
+    } catch (error) {
+        console.error('Error checking auth status:', error);
+        showAuthRequired();
+    }
+}
+
+// Handle sign in
+async function handleSignIn() {
+    console.log('handleSignIn called');
+    console.log('gapiLoaded:', gapiLoaded);
+    console.log('gisLoaded:', gisLoaded);
+    console.log('typeof google:', typeof google);
+    console.log('typeof gapi:', typeof gapi);
+    
+    if (!gapiLoaded) {
+        console.error('gapi not loaded yet');
+        alert('טוען את Google API. אנא נסה שוב בעוד רגע.');
+        return;
+    }
+    
+    if (!gisLoaded) {
+        console.error('Google Identity Services not loaded yet');
+        alert('טוען את Google Identity Services. אנא נסה שוב בעוד רגע.');
+        return;
+    }
+    
+    try {
+        if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
+            alert('Google Identity Services לא נטענו. אנא רענן את הדף.');
+            return;
+        }
+        
+        if (GOOGLE_CONFIG.CLIENT_ID.includes('YOUR_CLIENT_ID')) {
+            alert('אנא הגדר את ה-Client ID ב-config.js. ראה GOOGLE_SETUP.md להנחיות.');
+            return;
+        }
+        
+        const tokenClient = google.accounts.oauth2.initTokenClient({
+            client_id: GOOGLE_CONFIG.CLIENT_ID,
+            scope: GOOGLE_CONFIG.SCOPES,
+            callback: (tokenResponse) => {
+                console.log('Token response:', tokenResponse);
+                if (tokenResponse && tokenResponse.access_token) {
+                    gapi.client.setToken(tokenResponse);
+                    handleAuthSuccess();
+                } else if (tokenResponse.error) {
+                    console.error('OAuth error:', tokenResponse.error);
+                    alert('שגיאה בהתחברות: ' + tokenResponse.error);
+                }
+            }
+        });
+        
+        tokenClient.requestAccessToken({ prompt: 'consent' });
+    } catch (error) {
+        console.error('Error signing in:', error);
+        alert('שגיאה בהתחברות ל-Google: ' + error.message + '\n\nאנא ודא שה-API credentials מוגדרים נכון ב-config.js');
+    }
+}
+
+// Handle credential response (for Google Identity Services)
+function handleCredentialResponse(response) {
+    // This is for Google Sign-In button, we use OAuth2 token flow instead
+}
+
+// Handle successful authentication
+async function handleAuthSuccess() {
+    console.log('Authentication successful');
+    isSignedIn = true;
+    updateAuthUI();
+    
+    // Get user info
+    try {
+        if (userInfo) {
+            userInfo.textContent = `מחובר ללוח שנה`;
+        }
+    } catch (error) {
+        console.error('Error getting user info:', error);
+    }
+    
+    // Load entries from calendar
+    showLoading();
+    await loadEntriesFromCalendar();
+    hideLoading();
+}
+
+// Handle sign out
+function handleSignOut() {
+    console.log('Signing out');
+    const token = gapi.client.getToken();
+    if (token) {
+        google.accounts.oauth2.revoke(token.access_token);
+        gapi.client.setToken('');
+    }
+    isSignedIn = false;
+    entries = [];
+    updateAuthUI();
+    showAuthRequired();
+}
+
+// Update authentication UI
+function updateAuthUI() {
+    if (authSection) authSection.style.display = 'flex';
+    if (signInBtn) signInBtn.style.display = isSignedIn ? 'none' : 'inline-flex';
+    if (signOutBtn) signOutBtn.style.display = isSignedIn ? 'inline-flex' : 'none';
+    if (addBtn) addBtn.style.display = isSignedIn ? 'inline-flex' : 'none';
+    if (syncBtn) syncBtn.style.display = isSignedIn ? 'inline-flex' : 'none';
+}
+
+// Show loading state
+function showLoading() {
+    if (loadingState) loadingState.style.display = 'block';
+    if (emptyState) emptyState.classList.add('hidden');
+    if (authRequiredState) authRequiredState.style.display = 'none';
+}
+
+// Hide loading state
+function hideLoading() {
+    if (loadingState) loadingState.style.display = 'none';
+}
+
+// Show auth required state
+function showAuthRequired() {
+    if (authRequiredState) authRequiredState.style.display = 'block';
+    if (emptyState) emptyState.classList.add('hidden');
+    if (loadingState) loadingState.style.display = 'none';
+}
+
+// Convert entry to calendar event
+function entryToCalendarEvent(entry) {
+    const fullName = [
+        entry.motherName,
+        entry.fatherName,
+        entry.familyName
+    ].filter(n => n).join(' ') || entry.names || 'ללא שם';
+    
+    const eventTitle = `לידה: ${fullName}`;
+    
+    // Build description from entry fields
+    const descriptionParts = [];
+    if (entry.birthNumber) descriptionParts.push(`מספר לידה: ${entry.birthNumber}`);
+    if (entry.agreedAmount) descriptionParts.push(`סכום שסוכם: ${entry.agreedAmount} ₪`);
+    if (entry.actualAmount !== null) descriptionParts.push(`שולם בפועל: ${entry.actualAmount} ₪`);
+    if (entry.includes) descriptionParts.push(`מה כולל: ${entry.includes}`);
+    if (entry.birthPlace) descriptionParts.push(`מקום לידה: ${entry.birthPlace}`);
+    if (entry.babyGender) descriptionParts.push(`מין היילוד: ${entry.babyGender}`);
+    if (entry.referralSource) descriptionParts.push(`הגיעה דרך: ${entry.referralSource}`);
+    if (entry.notes) descriptionParts.push(`הערות: ${entry.notes}`);
+    
+    // Store entry data as JSON in extendedProperties
+    const entryData = {
+        id: entry.id,
+        month: entry.month,
+        motherName: entry.motherName,
+        fatherName: entry.fatherName,
+        familyName: entry.familyName,
+        birthNumber: entry.birthNumber,
+        agreedAmount: entry.agreedAmount,
+        actualAmount: entry.actualAmount,
+        includes: entry.includes,
+        notes: entry.notes,
+        birthDate: entry.birthDate,
+        babyGender: entry.babyGender,
+        birthPlace: entry.birthPlace,
+        referralSource: entry.referralSource
+    };
+    
+    const startDate = entry.estimatedDate || entry.birthDate || new Date().toISOString().split('T')[0];
+    const endDate = entry.birthDate || startDate;
+    
+    return {
+        summary: eventTitle,
+        description: descriptionParts.join('\n'),
+        start: {
+            date: startDate,
+            timeZone: 'Asia/Jerusalem'
+        },
+        end: {
+            date: endDate,
+            timeZone: 'Asia/Jerusalem'
+        },
+        extendedProperties: {
+            private: {
+                entryData: JSON.stringify(entryData)
+            }
+        }
+    };
+}
+
+// Convert calendar event to entry
+function calendarEventToEntry(event) {
+    try {
+        const entryData = event.extendedProperties?.private?.entryData 
+            ? JSON.parse(event.extendedProperties.private.entryData)
+            : {};
+        
+        return {
+            id: entryData.id || event.id,
+            eventId: event.id,
+            month: entryData.month || getMonthFromDate(event.start.date || event.start.dateTime),
+            estimatedDate: event.start.date || event.start.dateTime?.split('T')[0] || '',
+            birthDate: event.end.date || event.end.dateTime?.split('T')[0] || entryData.birthDate || '',
+            motherName: entryData.motherName || '',
+            fatherName: entryData.fatherName || '',
+            familyName: entryData.familyName || '',
+            names: entryData.motherName && entryData.familyName 
+                ? [entryData.motherName, entryData.fatherName, entryData.familyName].filter(n => n).join(' ')
+                : event.summary?.replace('לידה: ', '') || '',
+            birthNumber: entryData.birthNumber || 0,
+            agreedAmount: entryData.agreedAmount || 0,
+            actualAmount: entryData.actualAmount !== undefined ? entryData.actualAmount : null,
+            includes: entryData.includes || '',
+            notes: entryData.notes || '',
+            babyGender: entryData.babyGender || '',
+            birthPlace: entryData.birthPlace || '',
+            referralSource: entryData.referralSource || '',
+            createdAt: entryData.createdAt || new Date().toISOString(),
+            updatedAt: event.updated || new Date().toISOString()
+        };
+    } catch (error) {
+        console.error('Error parsing event to entry:', error);
+        // Fallback: create basic entry from event
+        return {
+            id: event.id,
+            eventId: event.id,
+            names: event.summary?.replace('לידה: ', '') || '',
+            estimatedDate: event.start.date || event.start.dateTime?.split('T')[0] || '',
+            birthDate: event.end.date || event.end.dateTime?.split('T')[0] || '',
+            createdAt: new Date().toISOString(),
+            updatedAt: event.updated || new Date().toISOString()
+        };
+    }
+}
+
+// Get month name from date string
+function getMonthFromDate(dateStr) {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    const months = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 
+                   'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+    return months[date.getMonth()];
+}
+
+// Load entries from Google Calendar
+async function loadEntriesFromCalendar() {
+    if (!isSignedIn || !gapi.client.calendar) {
+        console.error('Not signed in or calendar API not loaded');
+        return;
+    }
+    
+    try {
+        showLoading();
+        
+        // Get events from 2026 only
+        const timeMin = '2026-01-01T00:00:00Z';
+        const timeMax = '2026-12-31T23:59:59Z';
+        
+        const response = await gapi.client.calendar.events.list({
+            calendarId: GOOGLE_CONFIG.CALENDAR_ID,
+            timeMin: timeMin,
+            timeMax: timeMax,
+            maxResults: 2500,
+            singleEvents: true,
+            orderBy: 'startTime',
+            q: 'לידה:' // Filter for birth events
+        });
+        
+        const events = response.result.items || [];
+        entries = events
+            .filter(event => event.summary?.includes('לידה:'))
+            .map(event => calendarEventToEntry(event));
+        
+        renderEntries();
+        hideLoading();
+    } catch (error) {
+        console.error('Error loading entries from calendar:', error);
+        hideLoading();
+        alert('שגיאה בטעינת נתונים מ-Google Calendar. אנא נסה שוב.');
+    }
+}
+
+// Save event to Google Calendar
+async function saveEventToCalendar(entry) {
+    if (!isSignedIn || !gapi.client.calendar) {
+        throw new Error('Not signed in or calendar API not loaded');
+    }
+    
+    const event = entryToCalendarEvent(entry);
+    
+    try {
+        const response = await gapi.client.calendar.events.insert({
+            calendarId: GOOGLE_CONFIG.CALENDAR_ID,
+            resource: event
+        });
+        
+        return response.result.id;
+    } catch (error) {
+        console.error('Error saving event to calendar:', error);
+        throw error;
+    }
+}
+
+// Update event in Google Calendar
+async function updateEventInCalendar(eventId, entry) {
+    if (!isSignedIn || !gapi.client.calendar) {
+        throw new Error('Not signed in or calendar API not loaded');
+    }
+    
+    const event = entryToCalendarEvent(entry);
+    event.id = eventId;
+    
+    try {
+        await gapi.client.calendar.events.update({
+            calendarId: GOOGLE_CONFIG.CALENDAR_ID,
+            eventId: eventId,
+            resource: event
+        });
+    } catch (error) {
+        console.error('Error updating event in calendar:', error);
+        throw error;
+    }
+}
+
+// Delete event from Google Calendar
+async function deleteEventFromCalendar(eventId) {
+    if (!isSignedIn || !gapi.client.calendar) {
+        throw new Error('Not signed in or calendar API not loaded');
+    }
+    
+    try {
+        await gapi.client.calendar.events.delete({
+            calendarId: GOOGLE_CONFIG.CALENDAR_ID,
+            eventId: eventId
+        });
+    } catch (error) {
+        console.error('Error deleting event from calendar:', error);
+        throw error;
+    }
+}
+
 // Register Service Worker for PWA
 function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
