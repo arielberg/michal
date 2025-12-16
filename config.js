@@ -4,13 +4,13 @@
 
 const GOOGLE_CONFIG = {
     // Your Google API Client ID from Google Cloud Console
-    CLIENT_ID: 'mydomain-230211.apps.googleusercontent.com',
+    CLIENT_ID: '',
     
     // Calendar ID - use 'primary' for main calendar, or a specific calendar ID
     CALENDAR_ID: 'primary',
     
     // API Key (optional, for server-side use)
-    API_KEY: 'AIzaSyDoDS2oqX8XcFXt4t-NRA0F8-VYy_Wwp90',
+    API_KEY: '',
     
     // Scopes required
     SCOPES: 'https://www.googleapis.com/auth/calendar',

@@ -890,8 +890,9 @@ async function handleSignIn() {
             return;
         }
         
-        if (GOOGLE_CONFIG.CLIENT_ID.includes('YOUR_CLIENT_ID')) {
-            alert('אנא הגדר את ה-Client ID ב-config.js. ראה GOOGLE_SETUP.md להנחיות.');
+        if (GOOGLE_CONFIG.CLIENT_ID.includes('YOUR_CLIENT_ID') || !GOOGLE_CONFIG.CLIENT_ID || GOOGLE_CONFIG.CLIENT_ID.trim() === '') {
+            alert('אנא הגדר את ה-Client ID ב-config.js.\n\nעקב אחרי ההנחיות ב-GOOGLE_SETUP.md כדי לקבל Client ID מ-Google Cloud Console.');
+            console.error('Client ID not configured. Current value:', GOOGLE_CONFIG.CLIENT_ID);
             return;
         }
         
@@ -905,7 +906,18 @@ async function handleSignIn() {
                     handleAuthSuccess();
                 } else if (tokenResponse.error) {
                     console.error('OAuth error:', tokenResponse.error);
-                    alert('שגיאה בהתחברות: ' + tokenResponse.error);
+                    let errorMsg = 'שגיאה בהתחברות: ' + tokenResponse.error;
+                    
+                    if (tokenResponse.error === 'invalid_client') {
+                        errorMsg += '\n\nזה בדרך כלל אומר ש:\n';
+                        errorMsg += '1. ה-Client ID לא קיים או שגוי\n';
+                        errorMsg += '2. ה-URL הנוכחי לא ברשימת Authorized JavaScript origins\n\n';
+                        errorMsg += 'בדוק ב-Google Cloud Console:\n';
+                        errorMsg += '- Credentials > OAuth 2.0 Client ID שלך\n';
+                        errorMsg += '- ודא ש-http://localhost:8000 ב-Authorized JavaScript origins';
+                    }
+                    
+                    alert(errorMsg);
                 }
             }
         });
