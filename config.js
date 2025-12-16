@@ -4,7 +4,7 @@
 
 const GOOGLE_CONFIG = {
     // Your Google API Client ID from Google Cloud Console
-    CLIENT_ID: 'YOUR_CLIENT_ID.apps.googleusercontent.com',
+    CLIENT_ID: 'mydomain-230211.apps.googleusercontent.com',
     
     // Calendar ID - use 'primary' for main calendar, or a specific calendar ID
     CALENDAR_ID: 'primary',

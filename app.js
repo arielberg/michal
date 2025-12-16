@@ -216,7 +216,7 @@ function fillForm(entry) {
 }
 
 // Handle form submission
-function handleSubmit(e) {
+async function handleSubmit(e) {
     e.preventDefault();
     
     const formData = {
