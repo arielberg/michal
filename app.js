@@ -4,12 +4,25 @@ let editingId = null;
 let viewingId = null;
 let deletingId = null;
 let deferredPrompt = null;
+let isSignedIn = false;
+let gapiLoaded = false;
+let gisLoaded = false;
 
 // DOM Elements
 const entriesList = document.getElementById('entriesList');
 const emptyState = document.getElementById('emptyState');
+const emptyStateTitle = document.getElementById('emptyStateTitle');
+const emptyStateMessage = document.getElementById('emptyStateMessage');
+const loadingState = document.getElementById('loadingState');
+const authRequiredState = document.getElementById('authRequiredState');
+const authSection = document.getElementById('authSection');
+const signInBtn = document.getElementById('signInBtn');
+const signOutBtn = document.getElementById('signOutBtn');
+const authRequiredBtn = document.getElementById('authRequiredBtn');
+const userInfo = document.getElementById('userInfo');
 const addBtn = document.getElementById('addBtn');
 const installBtn = document.getElementById('installBtn');
+const syncBtn = document.getElementById('syncBtn');
 const entryModal = document.getElementById('entryModal');
 const viewModal = document.getElementById('viewModal');
 const deleteModal = document.getElementById('deleteModal');
@@ -29,18 +42,23 @@ const monthFilter = document.getElementById('monthFilter');
 const searchInput = document.getElementById('searchInput');
 
 // Initialize App
-document.addEventListener('DOMContentLoaded', () => {
-    loadEntries();
-    renderEntries();
+document.addEventListener('DOMContentLoaded', async () => {
     setupEventListeners();
     registerServiceWorker();
     setupInstallPrompt();
+    
+    // Initialize Google APIs
+    await initializeGoogleAPIs();
 });
 
 // Event Listeners
 function setupEventListeners() {
-    addBtn.addEventListener('click', () => openModal());
-    installBtn.addEventListener('click', handleInstallClick);
+    if (addBtn) addBtn.addEventListener('click', () => openModal());
+    if (signInBtn) signInBtn.addEventListener('click', handleSignIn);
+    if (signOutBtn) signOutBtn.addEventListener('click', handleSignOut);
+    if (authRequiredBtn) authRequiredBtn.addEventListener('click', handleSignIn);
+    if (syncBtn) syncBtn.addEventListener('click', () => loadEntriesFromCalendar());
+    if (installBtn) installBtn.addEventListener('click', handleInstallClick);
     closeModal.addEventListener('click', () => closeModalHandler());
     closeViewModal.addEventListener('click', () => closeViewModalHandler());
     closeDeleteModal.addEventListener('click', () => closeDeleteModalHandler());
@@ -107,17 +125,32 @@ function setupEventListeners() {
     });
 }
 
-// Load entries from localStorage
-function loadEntries() {
-    const saved = localStorage.getItem('birthEntries2026');
-    if (saved) {
-        entries = JSON.parse(saved);
+// Load entries from Google Calendar (or localStorage as fallback)
+async function loadEntries() {
+    if (isSignedIn && gapiLoaded) {
+        await loadEntriesFromCalendar();
+    } else {
+        // Fallback to localStorage if not signed in
+        const saved = localStorage.getItem('birthEntries2026');
+        if (saved) {
+            entries = JSON.parse(saved);
+            renderEntries();
+        } else {
+            showAuthRequired();
+        }
     }
 }
 
-// Save entries to localStorage
-function saveEntries() {
-    localStorage.setItem('birthEntries2026', JSON.stringify(entries));
+// Save entries to Google Calendar (or localStorage as fallback)
+async function saveEntries() {
+    if (isSignedIn && gapiLoaded) {
+        // Entries are saved individually to calendar in handleSubmit
+        // This function is kept for backward compatibility
+        return;
+    } else {
+        // Fallback to localStorage
+        localStorage.setItem('birthEntries2026', JSON.stringify(entries));
+    }
 }
 
 // Open Modal
@@ -217,16 +250,50 @@ function handleSubmit(e) {
         updatedAt: new Date().toISOString()
     };
 
-    if (editingId) {
-        const index = entries.findIndex(e => e.id === editingId);
-        if (index !== -1) {
-            entries[index] = formData;
+    // Save to calendar if signed in
+    if (isSignedIn && gapiLoaded) {
+        try {
+            if (editingId) {
+                const existingEntry = entries.find(e => e.id === editingId);
+                if (existingEntry?.eventId) {
+                    // Update existing event
+                    await updateEventInCalendar(existingEntry.eventId, formData);
+                    const index = entries.findIndex(e => e.id === editingId);
+                    if (index !== -1) {
+                        entries[index] = { ...formData, eventId: existingEntry.eventId };
+                    }
+                } else {
+                    // Create new event if no eventId
+                    const eventId = await saveEventToCalendar(formData);
+                    const index = entries.findIndex(e => e.id === editingId);
+                    if (index !== -1) {
+                        entries[index] = { ...formData, eventId };
+                    }
+                }
+            } else {
+                // Create new event
+                const eventId = await saveEventToCalendar(formData);
+                formData.eventId = eventId;
+                entries.push(formData);
+            }
+        } catch (error) {
+            console.error('Error saving to calendar:', error);
+            alert('שגיאה בשמירת האירוע בלוח השנה. אנא נסה שוב.');
+            return;
         }
     } else {
-        entries.push(formData);
+        // Fallback to localStorage
+        if (editingId) {
+            const index = entries.findIndex(e => e.id === editingId);
+            if (index !== -1) {
+                entries[index] = formData;
+            }
+        } else {
+            entries.push(formData);
+        }
+        saveEntries();
     }
-
-    saveEntries();
+    
     renderEntries();
     closeModalHandler();
 }
@@ -248,9 +315,21 @@ function deleteEntry(id) {
 }
 
 // Perform actual deletion
-function performDelete(id) {
+async function performDelete(id) {
+    const entry = entries.find(e => e.id === id);
+    if (entry && entry.eventId && isSignedIn && gapiLoaded) {
+        // Delete from calendar
+        try {
+            await deleteEventFromCalendar(entry.eventId);
+        } catch (error) {
+            console.error('Error deleting from calendar:', error);
+            alert('שגיאה במחיקת האירוע מהלוח שנה. אנא נסה שוב.');
+            return;
+        }
+    }
+    
     entries = entries.filter(e => e.id !== id);
-    saveEntries();
+    await saveEntries();
     renderEntries();
     closeDeleteModalHandler();
 }
