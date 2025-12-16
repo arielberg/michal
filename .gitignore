@@ -1,0 +1,40 @@
+# Google OAuth secrets - NEVER commit these!
+client_secret*.json
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+
+# API Keys and secrets
+config.js
+*.key
+*.pem
+*.p12
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE files
+.vscode/
+.idea/
+*.iml
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build files
+dist/
+build/
+*.min.js
+*.min.css
+
