@@ -47,7 +47,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     registerServiceWorker();
     setupInstallPrompt();
     
-    // Initialize Google APIs
+    // Load entries from localStorage immediately
+    await loadEntries();
+    
+    // Initialize Google APIs (but don't auto-sign-in)
     await initializeGoogleAPIs();
 });
 
@@ -57,7 +60,7 @@ function setupEventListeners() {
     if (signInBtn) signInBtn.addEventListener('click', handleSignIn);
     if (signOutBtn) signOutBtn.addEventListener('click', handleSignOut);
     if (authRequiredBtn) authRequiredBtn.addEventListener('click', handleSignIn);
-    if (syncBtn) syncBtn.addEventListener('click', () => loadEntriesFromCalendar());
+    if (syncBtn) syncBtn.addEventListener('click', handleSync);
     if (installBtn) installBtn.addEventListener('click', handleInstallClick);
     closeModal.addEventListener('click', () => closeModalHandler());
     closeViewModal.addEventListener('click', () => closeViewModalHandler());
@@ -125,32 +128,21 @@ function setupEventListeners() {
     });
 }
 
-// Load entries from Google Calendar (or localStorage as fallback)
+// Load entries from localStorage (always use local storage)
 async function loadEntries() {
-    if (isSignedIn && gapiLoaded) {
-        await loadEntriesFromCalendar();
+    const saved = localStorage.getItem('birthEntries2026');
+    if (saved) {
+        entries = JSON.parse(saved);
+        renderEntries();
     } else {
-        // Fallback to localStorage if not signed in
-        const saved = localStorage.getItem('birthEntries2026');
-        if (saved) {
-            entries = JSON.parse(saved);
-            renderEntries();
-        } else {
-            showAuthRequired();
-        }
+        entries = [];
+        renderEntries();
     }
 }
 
-// Save entries to Google Calendar (or localStorage as fallback)
+// Save entries to localStorage (always use local storage)
 async function saveEntries() {
-    if (isSignedIn && gapiLoaded) {
-        // Entries are saved individually to calendar in handleSubmit
-        // This function is kept for backward compatibility
-        return;
-    } else {
-        // Fallback to localStorage
-        localStorage.setItem('birthEntries2026', JSON.stringify(entries));
-    }
+    localStorage.setItem('birthEntries2026', JSON.stringify(entries));
 }
 
 // Open Modal
@@ -250,7 +242,18 @@ async function handleSubmit(e) {
         updatedAt: new Date().toISOString()
     };
 
-    // Save to calendar if signed in
+    // Always save to localStorage first
+    if (editingId) {
+        const index = entries.findIndex(e => e.id === editingId);
+        if (index !== -1) {
+            entries[index] = formData;
+        }
+    } else {
+        entries.push(formData);
+    }
+    await saveEntries();
+    
+    // Optionally sync to calendar if signed in (but don't block on it)
     if (isSignedIn && gapiLoaded) {
         try {
             if (editingId) {
@@ -261,37 +264,16 @@ async function handleSubmit(e) {
                     const index = entries.findIndex(e => e.id === editingId);
                     if (index !== -1) {
                         entries[index] = { ...formData, eventId: existingEntry.eventId };
-                    }
-                } else {
-                    // Create new event if no eventId
-                    const eventId = await saveEventToCalendar(formData);
-                    const index = entries.findIndex(e => e.id === editingId);
-                    if (index !== -1) {
-                        entries[index] = { ...formData, eventId };
+                        await saveEntries();
                     }
                 }
-            } else {
-                // Create new event
-                const eventId = await saveEventToCalendar(formData);
-                formData.eventId = eventId;
-                entries.push(formData);
+                // If no eventId, will be created on next sync
             }
+            // New entries will be synced on next sync button click
         } catch (error) {
-            console.error('Error saving to calendar:', error);
-            alert('שגיאה בשמירת האירוע בלוח השנה. אנא נסה שוב.');
-            return;
+            console.error('Error syncing to calendar (non-blocking):', error);
+            // Don't show error to user - data is saved locally
         }
-    } else {
-        // Fallback to localStorage
-        if (editingId) {
-            const index = entries.findIndex(e => e.id === editingId);
-            if (index !== -1) {
-                entries[index] = formData;
-            }
-        } else {
-            entries.push(formData);
-        }
-        saveEntries();
     }
     
     renderEntries();
@@ -316,22 +298,25 @@ function deleteEntry(id) {
 
 // Perform actual deletion
 async function performDelete(id) {
+    // Get entry info before deleting (for calendar deletion)
     const entry = entries.find(e => e.id === id);
-    if (entry && entry.eventId && isSignedIn && gapiLoaded) {
-        // Delete from calendar
-        try {
-            await deleteEventFromCalendar(entry.eventId);
-        } catch (error) {
-            console.error('Error deleting from calendar:', error);
-            alert('שגיאה במחיקת האירוע מהלוח שנה. אנא נסה שוב.');
-            return;
-        }
-    }
+    const eventId = entry?.eventId;
     
+    // Always delete from local storage
     entries = entries.filter(e => e.id !== id);
     await saveEntries();
     renderEntries();
     closeDeleteModalHandler();
+    
+    // Optionally delete from calendar if signed in (but don't block on it)
+    if (eventId && isSignedIn && gapiLoaded) {
+        try {
+            await deleteEventFromCalendar(eventId);
+        } catch (error) {
+            console.error('Error deleting from calendar (non-blocking):', error);
+            // Don't show error - entry is already deleted locally
+        }
+    }
 }
 
 // Close delete modal
@@ -835,32 +820,43 @@ async function initializeGoogleAPIs() {
         console.log('Google APIs initialization complete. gapiLoaded:', gapiLoaded, 'gisLoaded:', gisLoaded);
         updateAuthUI();
         
-        // Try to sign in automatically
-        await checkAuthStatus();
+        // Try to restore previous session token (but don't auto-sign-in)
+        await restoreAuthToken();
     } catch (error) {
         console.error('Error initializing Google APIs:', error);
         showAuthRequired();
     }
 }
 
-// Check authentication status
-async function checkAuthStatus() {
+// Restore authentication token from localStorage
+async function restoreAuthToken() {
     if (!gapiLoaded || !gapi.client || !gisLoaded) {
-        showAuthRequired();
         return;
     }
     
     try {
-        // Check if already authenticated (from previous session)
-        const token = gapi.client.getToken();
-        if (token && token.access_token) {
-            handleAuthSuccess();
-        } else {
-            showAuthRequired();
+        // Try to restore token from localStorage
+        const savedToken = localStorage.getItem('googleCalendarToken');
+        if (savedToken) {
+            const token = JSON.parse(savedToken);
+            // Check if token is still valid (not expired)
+            if (token.expires_at && new Date().getTime() < token.expires_at) {
+                gapi.client.setToken(token);
+                isSignedIn = true;
+                updateAuthUI();
+                if (userInfo) {
+                    userInfo.textContent = `מחובר ללוח שנה`;
+                }
+                console.log('Restored authentication token from localStorage');
+            } else {
+                // Token expired, remove it
+                localStorage.removeItem('googleCalendarToken');
+                console.log('Saved token expired, removed from localStorage');
+            }
         }
     } catch (error) {
-        console.error('Error checking auth status:', error);
-        showAuthRequired();
+        console.error('Error restoring auth token:', error);
+        localStorage.removeItem('googleCalendarToken');
     }
 }
 
@@ -902,6 +898,17 @@ async function handleSignIn() {
             callback: (tokenResponse) => {
                 console.log('Token response:', tokenResponse);
                 if (tokenResponse && tokenResponse.access_token) {
+                    // Calculate expiration time (tokens typically last 1 hour, but we'll use the expires_in if provided)
+                    const expiresIn = tokenResponse.expires_in || 3600; // Default to 1 hour
+                    const expiresAt = new Date().getTime() + (expiresIn * 1000);
+                    
+                    // Store token with expiration time
+                    const tokenToStore = {
+                        ...tokenResponse,
+                        expires_at: expiresAt
+                    };
+                    localStorage.setItem('googleCalendarToken', JSON.stringify(tokenToStore));
+                    
                     gapi.client.setToken(tokenResponse);
                     handleAuthSuccess();
                 } else if (tokenResponse.error) {
@@ -922,7 +929,8 @@ async function handleSignIn() {
             }
         });
         
-        tokenClient.requestAccessToken({ prompt: 'consent' });
+        // Use 'none' to avoid re-prompting if already authorized, but allow 'select_account' for first time
+        tokenClient.requestAccessToken({ prompt: '' });
     } catch (error) {
         console.error('Error signing in:', error);
         alert('שגיאה בהתחברות ל-Google: ' + error.message + '\n\nאנא ודא שה-API credentials מוגדרים נכון ב-config.js');
@@ -949,10 +957,8 @@ async function handleAuthSuccess() {
         console.error('Error getting user info:', error);
     }
     
-    // Load entries from calendar
-    showLoading();
-    await loadEntriesFromCalendar();
-    hideLoading();
+    // Don't load entries from calendar - data stays local
+    // User can sync manually using sync button
 }
 
 // Handle sign out
@@ -963,10 +969,11 @@ function handleSignOut() {
         google.accounts.oauth2.revoke(token.access_token);
         gapi.client.setToken('');
     }
+    // Remove saved token
+    localStorage.removeItem('googleCalendarToken');
     isSignedIn = false;
-    entries = [];
+    // Don't clear entries - they stay in localStorage
     updateAuthUI();
-    showAuthRequired();
 }
 
 // Update authentication UI
@@ -974,8 +981,10 @@ function updateAuthUI() {
     if (authSection) authSection.style.display = 'flex';
     if (signInBtn) signInBtn.style.display = isSignedIn ? 'none' : 'inline-flex';
     if (signOutBtn) signOutBtn.style.display = isSignedIn ? 'inline-flex' : 'none';
-    if (addBtn) addBtn.style.display = isSignedIn ? 'inline-flex' : 'none';
-    if (syncBtn) syncBtn.style.display = isSignedIn ? 'inline-flex' : 'none';
+    // Always show add button - data is stored locally
+    if (addBtn) addBtn.style.display = 'inline-flex';
+    // Show sync button - will trigger login if needed
+    if (syncBtn) syncBtn.style.display = 'inline-flex';
 }
 
 // Show loading state
@@ -990,11 +999,10 @@ function hideLoading() {
     if (loadingState) loadingState.style.display = 'none';
 }
 
-// Show auth required state
+// Show auth required state (not used anymore - data is always local)
 function showAuthRequired() {
-    if (authRequiredState) authRequiredState.style.display = 'block';
-    if (emptyState) emptyState.classList.add('hidden');
-    if (loadingState) loadingState.style.display = 'none';
+    // Don't show auth required - app works without Google Calendar
+    if (authRequiredState) authRequiredState.style.display = 'none';
 }
 
 // Convert entry to calendar event
@@ -1112,41 +1120,66 @@ function getMonthFromDate(dateStr) {
     return months[date.getMonth()];
 }
 
-// Load entries from Google Calendar
-async function loadEntriesFromCalendar() {
+// Sync local entries to Google Calendar (push only, never delete from local)
+async function handleSync() {
+    // First, ensure we're signed in
     if (!isSignedIn || !gapi.client.calendar) {
-        console.error('Not signed in or calendar API not loaded');
-        return;
+        // Try to restore token first
+        await restoreAuthToken();
+        
+        // If still not signed in, trigger login
+        if (!isSignedIn || !gapi.client.calendar) {
+            await handleSignIn();
+            // After sign in, check again
+            if (!isSignedIn || !gapi.client.calendar) {
+                return; // User cancelled or error occurred
+            }
+        }
     }
     
     try {
         showLoading();
         
-        // Get events from 2026 only
-        const timeMin = '2026-01-01T00:00:00Z';
-        const timeMax = '2026-12-31T23:59:59Z';
+        // Sync all local entries to Google Calendar
+        let syncedCount = 0;
+        let errorCount = 0;
         
-        const response = await gapi.client.calendar.events.list({
-            calendarId: GOOGLE_CONFIG.CALENDAR_ID,
-            timeMin: timeMin,
-            timeMax: timeMax,
-            maxResults: 2500,
-            singleEvents: true,
-            orderBy: 'startTime',
-            q: 'לידה:' // Filter for birth events
-        });
+        for (const entry of entries) {
+            try {
+                if (entry.eventId) {
+                    // Update existing event
+                    await updateEventInCalendar(entry.eventId, entry);
+                    syncedCount++;
+                } else {
+                    // Create new event
+                    const eventId = await saveEventToCalendar(entry);
+                    // Update local entry with eventId
+                    const index = entries.findIndex(e => e.id === entry.id);
+                    if (index !== -1) {
+                        entries[index] = { ...entry, eventId };
+                    }
+                    syncedCount++;
+                }
+            } catch (error) {
+                console.error(`Error syncing entry ${entry.id}:`, error);
+                errorCount++;
+            }
+        }
         
-        const events = response.result.items || [];
-        entries = events
-            .filter(event => event.summary?.includes('לידה:'))
-            .map(event => calendarEventToEntry(event));
-        
+        // Save updated entries with eventIds
+        await saveEntries();
         renderEntries();
         hideLoading();
+        
+        if (errorCount === 0) {
+            alert(`סנכרון הושלם בהצלחה! ${syncedCount} רשומות סונכרנו ל-Google Calendar.`);
+        } else {
+            alert(`סנכרון הושלם עם שגיאות. ${syncedCount} רשומות סונכרנו, ${errorCount} שגיאות.`);
+        }
     } catch (error) {
-        console.error('Error loading entries from calendar:', error);
+        console.error('Error syncing to calendar:', error);
         hideLoading();
-        alert('שגיאה בטעינת נתונים מ-Google Calendar. אנא נסה שוב.');
+        alert('שגיאה בסנכרון ל-Google Calendar. אנא נסה שוב.');
     }
 }
 
