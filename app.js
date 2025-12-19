@@ -47,6 +47,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     registerServiceWorker();
     setupInstallPrompt();
     
+    // Ensure UI is set up for working without auth
+    updateAuthUI();
+    if (authRequiredState) authRequiredState.style.display = 'none';
+    
     // Load entries from localStorage immediately
     await loadEntries();
     
@@ -821,16 +825,24 @@ async function initializeGoogleAPIs() {
         updateAuthUI();
         
         // Try to restore previous session token (but don't auto-sign-in)
-        await restoreAuthToken();
+        // Wait a bit for everything to be ready, then restore token
+        setTimeout(async () => {
+            await restoreAuthToken();
+        }, 500);
     } catch (error) {
         console.error('Error initializing Google APIs:', error);
-        showAuthRequired();
+        // Don't block - app works without Google Calendar
+        updateAuthUI();
     }
 }
 
 // Restore authentication token from localStorage
 async function restoreAuthToken() {
+    // Wait for APIs to be fully loaded
     if (!gapiLoaded || !gapi.client || !gisLoaded) {
+        console.log('APIs not ready yet, will retry token restoration');
+        // Retry after a short delay
+        setTimeout(() => restoreAuthToken(), 1000);
         return;
     }
     
@@ -838,25 +850,60 @@ async function restoreAuthToken() {
         // Try to restore token from localStorage
         const savedToken = localStorage.getItem('googleCalendarToken');
         if (savedToken) {
-            const token = JSON.parse(savedToken);
-            // Check if token is still valid (not expired)
-            if (token.expires_at && new Date().getTime() < token.expires_at) {
-                gapi.client.setToken(token);
-                isSignedIn = true;
-                updateAuthUI();
-                if (userInfo) {
-                    userInfo.textContent = `מחובר ללוח שנה`;
-                }
-                console.log('Restored authentication token from localStorage');
-            } else {
-                // Token expired, remove it
+            const tokenData = JSON.parse(savedToken);
+            
+            // Check if we have the required access_token
+            if (!tokenData.access_token) {
+                console.log('Saved token missing access_token, clearing');
                 localStorage.removeItem('googleCalendarToken');
-                console.log('Saved token expired, removed from localStorage');
+                return;
             }
+            
+            // Create token object in the format Google expects
+            const token = {
+                access_token: tokenData.access_token,
+                expires_in: tokenData.expires_in,
+                scope: tokenData.scope,
+                token_type: tokenData.token_type || 'Bearer'
+            };
+            
+            // Set the token - Google will handle validation when we use it
+            gapi.client.setToken(token);
+            
+            // Mark as signed in - if token is expired, Google will handle it on next API call
+            isSignedIn = true;
+            updateAuthUI();
+            if (userInfo) {
+                userInfo.textContent = `מחובר ללוח שנה`;
+            }
+            console.log('Restored authentication token from localStorage');
+            
+            // Optionally verify token is still valid (non-blocking)
+            // If it fails, we'll handle it when user tries to sync
+            gapi.client.calendar.calendarList.list({ maxResults: 1 })
+                .then(() => {
+                    console.log('Token verified successfully');
+                })
+                .catch((error) => {
+                    console.log('Token may be expired, will need refresh on next sync:', error);
+                    // Don't clear token here - let user try to sync, which will trigger refresh
+                });
+        } else {
+            console.log('No saved token found');
         }
     } catch (error) {
         console.error('Error restoring auth token:', error);
-        localStorage.removeItem('googleCalendarToken');
+        // Clear potentially corrupted token
+        try {
+            localStorage.removeItem('googleCalendarToken');
+            if (gapi.client) {
+                gapi.client.setToken(null);
+            }
+        } catch (e) {
+            console.error('Error clearing token:', e);
+        }
+        isSignedIn = false;
+        updateAuthUI();
     }
 }
 
@@ -902,14 +949,24 @@ async function handleSignIn() {
                     const expiresIn = tokenResponse.expires_in || 3600; // Default to 1 hour
                     const expiresAt = new Date().getTime() + (expiresIn * 1000);
                     
-                    // Store token with expiration time
+                    // Store token with all necessary fields
                     const tokenToStore = {
-                        ...tokenResponse,
+                        access_token: tokenResponse.access_token,
+                        expires_in: tokenResponse.expires_in || expiresIn,
+                        scope: tokenResponse.scope,
+                        token_type: tokenResponse.token_type || 'Bearer',
                         expires_at: expiresAt
                     };
                     localStorage.setItem('googleCalendarToken', JSON.stringify(tokenToStore));
                     
-                    gapi.client.setToken(tokenResponse);
+                    // Set token in gapi client
+                    gapi.client.setToken({
+                        access_token: tokenResponse.access_token,
+                        expires_in: tokenResponse.expires_in,
+                        scope: tokenResponse.scope,
+                        token_type: tokenResponse.token_type || 'Bearer'
+                    });
+                    
                     handleAuthSuccess();
                 } else if (tokenResponse.error) {
                     console.error('OAuth error:', tokenResponse.error);
@@ -929,7 +986,8 @@ async function handleSignIn() {
             }
         });
         
-        // Use 'none' to avoid re-prompting if already authorized, but allow 'select_account' for first time
+        // Use empty prompt to avoid re-prompting if already authorized
+        // This will use cached credentials if available
         tokenClient.requestAccessToken({ prompt: '' });
     } catch (error) {
         console.error('Error signing in:', error);
@@ -1123,15 +1181,15 @@ function getMonthFromDate(dateStr) {
 // Sync local entries to Google Calendar (push only, never delete from local)
 async function handleSync() {
     // First, ensure we're signed in
-    if (!isSignedIn || !gapi.client.calendar) {
+    if (!isSignedIn || !gapi.client || !gapi.client.calendar) {
         // Try to restore token first
         await restoreAuthToken();
         
         // If still not signed in, trigger login
-        if (!isSignedIn || !gapi.client.calendar) {
+        if (!isSignedIn || !gapi.client || !gapi.client.calendar) {
             await handleSignIn();
             // After sign in, check again
-            if (!isSignedIn || !gapi.client.calendar) {
+            if (!isSignedIn || !gapi.client || !gapi.client.calendar) {
                 return; // User cancelled or error occurred
             }
         }
@@ -1161,8 +1219,43 @@ async function handleSync() {
                     syncedCount++;
                 }
             } catch (error) {
-                console.error(`Error syncing entry ${entry.id}:`, error);
-                errorCount++;
+                // Check if error is due to expired token
+                if (error.status === 401 || (error.result && error.result.error && error.result.error.code === 401)) {
+                    console.log('Token expired, attempting to refresh...');
+                    // Clear current token and try to get a new one
+                    localStorage.removeItem('googleCalendarToken');
+                    gapi.client.setToken(null);
+                    isSignedIn = false;
+                    
+                    // Try to sign in again (will use cached credentials if available)
+                    await handleSignIn();
+                    
+                    if (isSignedIn && gapi.client.calendar) {
+                        // Retry the failed operation
+                        try {
+                            if (entry.eventId) {
+                                await updateEventInCalendar(entry.eventId, entry);
+                                syncedCount++;
+                            } else {
+                                const eventId = await saveEventToCalendar(entry);
+                                const index = entries.findIndex(e => e.id === entry.id);
+                                if (index !== -1) {
+                                    entries[index] = { ...entry, eventId };
+                                }
+                                syncedCount++;
+                            }
+                        } catch (retryError) {
+                            console.error(`Error syncing entry ${entry.id} after token refresh:`, retryError);
+                            errorCount++;
+                        }
+                    } else {
+                        console.error(`Token refresh failed for entry ${entry.id}`);
+                        errorCount++;
+                    }
+                } else {
+                    console.error(`Error syncing entry ${entry.id}:`, error);
+                    errorCount++;
+                }
             }
         }
         
@@ -1179,7 +1272,17 @@ async function handleSync() {
     } catch (error) {
         console.error('Error syncing to calendar:', error);
         hideLoading();
-        alert('שגיאה בסנכרון ל-Google Calendar. אנא נסה שוב.');
+        
+        // Check if it's an auth error
+        if (error.status === 401 || (error.result && error.result.error && error.result.error.code === 401)) {
+            alert('פג תוקף ההתחברות. אנא התחבר מחדש.');
+            localStorage.removeItem('googleCalendarToken');
+            gapi.client.setToken(null);
+            isSignedIn = false;
+            updateAuthUI();
+        } else {
+            alert('שגיאה בסנכרון ל-Google Calendar. אנא נסה שוב.');
+        }
     }
 }
 
