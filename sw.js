@@ -1,4 +1,4 @@
-const CACHE_NAME = 'birth-registry-2026-v1';
+const CACHE_NAME = 'birth-registry-2026-v2';
 const urlsToCache = [
     './',
     './index.html',
@@ -20,6 +20,8 @@ self.addEventListener('install', (event) => {
                 return cache.addAll(urlsToCache);
             })
     );
+    // Force the waiting service worker to become the active service worker
+    self.skipWaiting();
 });
 
 // Fetch Event - Serve from cache, fallback to network
@@ -45,6 +47,16 @@ self.addEventListener('activate', (event) => {
                     }
                 })
             );
+        }).then(() => {
+            // Take control of all clients immediately
+            return self.clients.claim();
         })
     );
+});
+
+// Listen for messages from the app
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
 });

@@ -23,6 +23,7 @@ const userInfo = document.getElementById('userInfo');
 const addBtn = document.getElementById('addBtn');
 const installBtn = document.getElementById('installBtn');
 const syncBtn = document.getElementById('syncBtn');
+const upgradeBtn = document.getElementById('upgradeBtn');
 const entryModal = document.getElementById('entryModal');
 const viewModal = document.getElementById('viewModal');
 const deleteModal = document.getElementById('deleteModal');
@@ -66,6 +67,7 @@ function setupEventListeners() {
     if (authRequiredBtn) authRequiredBtn.addEventListener('click', handleSignIn);
     if (syncBtn) syncBtn.addEventListener('click', handleSync);
     if (installBtn) installBtn.addEventListener('click', handleInstallClick);
+    if (upgradeBtn) upgradeBtn.addEventListener('click', handleUpgrade);
     closeModal.addEventListener('click', () => closeModalHandler());
     closeViewModal.addEventListener('click', () => closeViewModalHandler());
     closeDeleteModal.addEventListener('click', () => closeDeleteModalHandler());
@@ -1351,9 +1353,85 @@ function registerServiceWorker() {
         navigator.serviceWorker.register('./sw.js', { scope: './' })
             .then(registration => {
                 console.log('Service Worker registered:', registration);
+                
+                // Check for updates periodically
+                checkForUpdates(registration);
+                
+                // Check for updates when the page regains focus
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) {
+                        checkForUpdates(registration);
+                    }
+                });
+                
+                // Listen for service worker updates
+                registration.addEventListener('updatefound', () => {
+                    console.log('New service worker found');
+                    const newWorker = registration.installing;
+                    
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            // New service worker is available
+                            console.log('New service worker installed, showing upgrade button');
+                            if (upgradeBtn) {
+                                upgradeBtn.style.display = 'inline-flex';
+                            }
+                        }
+                    });
+                });
+                
+                // Check if there's already a waiting service worker
+                if (registration.waiting) {
+                    console.log('Service worker waiting to activate');
+                    if (upgradeBtn) {
+                        upgradeBtn.style.display = 'inline-flex';
+                    }
+                }
             })
             .catch(error => {
                 console.log('Service Worker registration failed:', error);
             });
+        
+        // Listen for controller change (service worker updated)
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+            console.log('Service worker controller changed, reloading...');
+            window.location.reload();
+        });
+    }
+}
+
+// Check for service worker updates
+function checkForUpdates(registration) {
+    registration.update()
+        .then(() => {
+            // After update check, see if there's a waiting service worker
+            if (registration.waiting) {
+                console.log('Service worker waiting to activate (after update check)');
+                if (upgradeBtn) {
+                    upgradeBtn.style.display = 'inline-flex';
+                }
+            }
+        })
+        .catch(error => {
+            console.log('Error checking for updates:', error);
+        });
+}
+
+// Handle upgrade button click
+function handleUpgrade() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration().then(registration => {
+            if (registration && registration.waiting) {
+                // Tell the waiting service worker to skip waiting
+                registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+                
+                // Hide the upgrade button
+                if (upgradeBtn) {
+                    upgradeBtn.style.display = 'none';
+                }
+                
+                // The page will reload automatically when the controller changes
+            }
+        });
     }
 }
